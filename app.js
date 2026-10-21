@@ -745,5 +745,7 @@
 
   aggiorna();
   aggiornaSel();
+  // le animazioni del foglio dei filtri solo dopo il primo disegno: all'apertura non deve scorrere via a vista
+  setTimeout(() => document.body.classList.add("avviato"), 600);
   apriDaHash();
 })();
