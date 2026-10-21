@@ -157,6 +157,10 @@
 
   /* ---------- griglia ed elenco ---------- */
   const spunta = () => el("span", { class: "spunta", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>' });
+  const attesaAnteprime = "IntersectionObserver" in window ? new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { attesaAnteprime.unobserve(e.target); e.target._quandoVisibile(); }
+  }), { rootMargin: "200px" }) : null;
+  const osservaAnteprima = (box, fn) => { if (attesaAnteprime) { box._quandoVisibile = fn; attesaAnteprime.observe(box); } else fn(); };
   function miniatura(v, classe) {
     if (!scaricabile(v)) {
       const tessera = () => el("div", { class: "rif" },
@@ -166,8 +170,17 @@
       // anteprima della fonte, collegata e non copiata; se non carica si torna alla scheda senza immagine
       const box = el("div", { class: `${classe} con-anteprima` });
       const img = el("img", { alt: "", loading: "lazy", decoding: "async", draggable: "false", referrerpolicy: "no-referrer", src: v.anteprima });
+      let fatta = false;
+      const ripiega = () => {  // senza anteprima: la scheda con titolo e nota, tenendo badge e spunta
+        if (fatta || img.classList.contains("caricata")) return;
+        fatta = true;
+        box.classList.remove("con-anteprima");
+        box.replaceChildren(tessera(), ...[...box.children].filter(c => c !== img && !c.classList.contains("etichetta-ap")));
+      };
       img.addEventListener("load", () => img.classList.add("caricata"));
-      img.addEventListener("error", () => box.replaceChildren(tessera(), ...[...box.children].filter(c => c !== img && !c.classList.contains("etichetta-ap"))));
+      img.addEventListener("error", ripiega);
+      // un indirizzo che non risponde non da' mai "error": dopo 15 s da quando e' visibile si ripiega
+      osservaAnteprima(box, () => setTimeout(() => { if (!(img.complete && img.naturalWidth)) ripiega(); }, 15000));
       box.append(img);
       if (classe !== "thumb") box.append(el("span", { class: "etichetta-ap" }, "Anteprima Envato"));
       return box;
