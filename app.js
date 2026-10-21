@@ -392,6 +392,8 @@
       const lq = el("img", { class: "lqip", src: v.lqip, alt: "", "aria-hidden": "true" });
       const alta = el("img", { class: "alta", alt: v.titolo || v.autore || "", draggable: "false", decoding: "async" });
       cornice.append(lq, alta);
+      // CC BY / BY-SA: l'attribuzione e' un obbligo della licenza, si vede sempre sotto la foto
+      if (v.attribuzione) cornice.append(el("p", { class: "lb-credito" }, v.attribuzione));
       s.append(cornice);
       s._dimensiona = () => {
         const r = scena.getBoundingClientRect(), cs = getComputedStyle(s);
