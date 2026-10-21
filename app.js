@@ -25,200 +25,216 @@
   const punti = n => (Math.round(n * 10) / 10).toString().replace(".", ",");
   const due = n => String(n).padStart(2, "0");
   const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const ls = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
 
-  // esiti nell'ordine in cui si mostrano; "Tutte" li mette in fila in quest'ordine
-  const ESITI = [["rosa", "In rosa"], ["quasi", "Quasi"], ["da_verificare", "Da verificare"], ["scartata", "Scartate"]];
-  const RANGO = Object.fromEntries(ESITI.map(([k], i) => [k, i]));
+  const ESITI = ["rosa", "quasi", "da_verificare", "scartata"];
+  const RANGO = Object.fromEntries(ESITI.map((k, i) => [k, i]));
   const NOME_ESITO = { rosa: "In rosa", quasi: "Quasi", da_verificare: "Da verificare", scartata: "Scartata" };
+  const COLORE_ESITO = { rosa: "var(--e-rosa)", quasi: "var(--e-quasi)", da_verificare: "var(--e-verif)", scartata: "var(--e-scart)" };
   // lo ZIP si costruisce in memoria: su telefono oltre ~300 MB la pagina rischia di essere chiusa dal sistema
   const telefono = isIOS || /Android/i.test(navigator.userAgent);
   const MAX_ZIP = (telefono ? 300 : 1500) * 1048576;
-  const presenti = ESITI.filter(([k]) => DATI.some(v => v.esito === k));
+
+  const lato = v => Math.max(v.w || 0, v.h || 0);
+  const FACCETTE = [
+    { k: "raccolta", nome: "Raccolta", val: v => v.raccolta || "—", soloSePiu: true },
+    { k: "esito", nome: "Esito", val: v => v.esito, ordine: (a, b) => (RANGO[a] ?? 9) - (RANGO[b] ?? 9), etichetta: x => NOME_ESITO[x] || x, colore: x => COLORE_ESITO[x] },
+    { k: "fonte", nome: "Fonte", val: v => v.fonte || "—" },
+    { k: "licenza", nome: "Licenza", val: v => v.licenza || "—" },
+    { k: "orient", nome: "Orientamento", val: v => !v.w ? "—" : v.w > v.h * 1.05 ? "Orizzontale" : v.h > v.w * 1.05 ? "Verticale" : "Quadrata",
+      ordine: (a, b) => ["Orizzontale", "Verticale", "Quadrata", "—"].indexOf(a) - ["Orizzontale", "Verticale", "Quadrata", "—"].indexOf(b) },
+    { k: "ris", nome: "Risoluzione, lato lungo", val: v => !lato(v) ? "—" : lato(v) >= 3000 ? "3000 px e oltre" : lato(v) >= 2000 ? "2000–2999 px" : "sotto 2000 px",
+      ordine: (a, b) => ["3000 px e oltre", "2000–2999 px", "sotto 2000 px", "—"].indexOf(a) - ["3000 px e oltre", "2000–2999 px", "sotto 2000 px", "—"].indexOf(b) },
+  ];
+  // singolare e plurale: "porte" trova anche "porta", "finestre" anche "finestra"
+  const radice = t => (t.length > 4 ? t.replace(/[aeio]$/, "") : t);
+  const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  for (const v of DATI) v._testo = norm([v.id, v.titolo, v.note, v.autore, v.fonte, v.licenza, v.raccolta, NOME_ESITO[v.esito], v.attribuzione].join(" "));
+
+  // si apre sull'esito migliore presente (rosa, altrimenti quasi...); le altre si aggiungono dai filtri
+  const migliore = ESITI.find(e => e !== "scartata" && DATI.some(v => v.esito === e));
   const stato = {
-    // si apre sulla rosa quando e' abbastanza ricca; altrimenti su Tutte (che mette comunque la rosa in testa)
-    esito: DATI.filter(v => v.esito === "rosa").length >= 6 ? "rosa" : "tutte",
-    fonte: "tutte", ordina: "punteggio", selezione: false, scelte: new Set(), vista: [],
+    sel: Object.fromEntries(FACCETTE.map(f => [f.k, new Set()])), gate: new Set(), q: "",
+    ordina: "punteggio", vista: [], modo: ls.get("archivio-vista") === "elenco" ? "elenco" : "griglia",
+    selezione: false, scelte: new Set(),
   };
-  const galleria = $("#raccolta");
+  if (migliore) stato.sel.esito.add(migliore);
+  const griglia = $("#griglia"), righe = $("#righe");
   const schede = new Map();
 
-  if (DATI.some(v => v.prova || v.esito === "da_verificare")) $("#avvisoProva").hidden = false;
-  $("#navConta").textContent = `${DATI.length} fotografie`;
-
-  /* ---------- copertina: la fotografia migliore ---------- */
-  (function copertina() {
-    const cand = DATI.filter(scaricabile).sort((a, b) => (RANGO[a.esito] ?? 9) - (RANGO[b.esito] ?? 9) || b.punteggio - a.punteggio);
-    const v = cand.find(x => x.w >= x.h) || cand[0];
-    const fig = $("#eroeFoto");
-    const parti = () => requestAnimationFrame(() => document.body.classList.add("pronto"));
-    if (!v) { parti(); return; }
-    fig.style.setProperty("--lqip", `url("${v.lqip}")`);
-    const img = el("img", { alt: v.titolo || "", decoding: "async", fetchpriority: "high",
-      srcset: `${v.img.t960} 960w, ${v.img.grande} 2048w`, src: v.img.grande,
-      // "cover" su un telefono in verticale ritaglia una foto orizzontale: serve la larghezza che riempie l'altezza
-      sizes: `${Math.ceil(Math.max(innerWidth, innerHeight * v.w / v.h))}px` });
-    img.addEventListener("load", () => { img.classList.add("caricata"); parti(); }, { once: true });
-    img.addEventListener("error", parti, { once: true });
-    setTimeout(parti, 1600);
-    fig.append(img);
-    fig.style.cursor = "zoom-in";
-    fig.addEventListener("click", () => { const i = stato.vista.indexOf(v); if (i >= 0) apri(i); });
-    $("#eroeCredito").textContent = `Fotografia: ${v.autore}${v.fonte ? " / " + v.fonte : ""}`;
-  })();
-
   /* ---------- filtri ---------- */
-  const perEsito = v => stato.esito === "tutte" || v.esito === stato.esito;
-  function filtri() {
-    const voci = presenti.length > 1 ? [...presenti, ["tutte", "Tutte"]] : [["tutte", "Tutte"]];
-    $("#esiti").replaceChildren(...voci.map(([val, testo]) => el("button", {
-      type: "button", "aria-pressed": String(stato.esito === val),
-      onclick: () => { stato.esito = val; filtri(); disegna(); scrollSu(); },
-    }, testo, el("sup", {}, String(val === "tutte" ? DATI.length : DATI.filter(v => v.esito === val).length)))));
-    const base = DATI.filter(perEsito);
-    if (stato.fonte !== "tutte" && !base.some(v => v.fonte === stato.fonte)) stato.fonte = "tutte";
-    const conta = {};
-    for (const v of base) conta[v.fonte] = (conta[v.fonte] || 0) + 1;
-    const box = $("#filtri");
+  const passa = (v, salta) => {
+    for (const f of FACCETTE) if (f.k !== salta && stato.sel[f.k].size && !stato.sel[f.k].has(f.val(v))) return false;
+    if (salta !== "gate") for (const g of stato.gate) if (v.gate[g] === false) return false;
+    if (stato.q) for (const t of stato.q.split(/[\s-]+/)) if (t && !v._testo.includes(radice(t))) return false;
+    return true;
+  };
+  function faccette() {
+    const box = $("#faccette");
     box.replaceChildren();
-    if (Object.keys(conta).length < 2) return;  // una fonte sola: niente filtri inutili
-    const chip = (val, testo, n) => el("button", {
-      class: "chip", type: "button", "aria-pressed": String(stato.fonte === val),
-      onclick: () => { stato.fonte = val; filtri(); disegna(); scrollSu(); },
-    }, testo, el("small", {}, String(n)));
-    box.append(chip("tutte", "Ogni fonte", base.length));
-    for (const f of Object.keys(conta).sort((a, b) => a.localeCompare(b, "it"))) box.append(chip(f, f, conta[f]));
+    for (const f of FACCETTE) {
+      const tutti = [...new Set(DATI.map(f.val))].sort(f.ordine || ((a, b) => a.localeCompare(b, "it")));
+      if (f.soloSePiu && tutti.length < 2) continue;
+      const base = DATI.filter(v => passa(v, f.k));
+      const sez = el("section", { class: "faccetta" }, el("h3", {}, f.nome));
+      for (const x of tutti) {
+        const n = base.filter(v => f.val(v) === x).length;
+        const cb = el("input", { type: "checkbox" });
+        cb.checked = stato.sel[f.k].has(x);
+        cb.addEventListener("change", () => { cb.checked ? stato.sel[f.k].add(x) : stato.sel[f.k].delete(x); aggiorna(); });
+        sez.append(el("label", { class: n || cb.checked ? "" : "zero" }, cb,
+          f.colore ? el("span", { class: "pallino", style: `background:${f.colore(x)}` }) : null,
+          el("span", {}, f.etichetta ? f.etichetta(x) : x), el("span", { class: "n" }, String(n))));
+      }
+      box.append(sez);
+    }
+    const base = DATI.filter(v => passa(v, "gate"));
+    const sez = el("section", { class: "faccetta" }, el("h3", {}, "Criterio rispettato"));
+    for (const g of GATE) {
+      const n = base.filter(v => v.gate[g] !== false).length;
+      const cb = el("input", { type: "checkbox" });
+      cb.checked = stato.gate.has(g);
+      cb.addEventListener("change", () => { cb.checked ? stato.gate.add(g) : stato.gate.delete(g); aggiorna(); });
+      sez.append(el("label", {}, cb, el("span", {}, `${g} · ${NOMI_GATE[g]}`), el("span", { class: "n" }, String(n))));
+    }
+    box.append(sez);
   }
-  $("#ordina").addEventListener("change", e => { stato.ordina = e.target.value; disegna(); });
+  function attivi() {
+    const box = $("#attivi");
+    const chip = (testo, via) => el("button", { type: "button", title: "Togli", onclick: () => { via(); aggiorna(); } }, testo);
+    const lista = [];
+    for (const f of FACCETTE) for (const x of stato.sel[f.k]) lista.push(chip(f.etichetta ? f.etichetta(x) : x, () => stato.sel[f.k].delete(x)));
+    for (const g of stato.gate) lista.push(chip(`${g} rispettato`, () => stato.gate.delete(g)));
+    if (stato.q) lista.push(chip(`«${$("#cerca").value.trim()}»`, () => { stato.q = ""; $("#cerca").value = ""; }));
+    box.replaceChildren(...lista);
+    $("#nFiltri").textContent = lista.length ? `(${lista.length})` : "";
+  }
+  function azzera() {
+    for (const f of FACCETTE) stato.sel[f.k].clear();
+    stato.gate.clear(); stato.q = ""; $("#cerca").value = "";
+    aggiorna();
+  }
+  $("#azzera").addEventListener("click", azzera);
+  $("#azzera2").addEventListener("click", azzera);
+  let timerQ;
+  $("#cerca").addEventListener("input", e => { clearTimeout(timerQ); timerQ = setTimeout(() => { stato.q = norm(e.target.value.trim()); aggiorna(); }, 120); });
+  $("#cerca").addEventListener("keydown", e => { if (e.key === "Enter") e.target.blur(); });
+  $("#ordina").addEventListener("change", e => { stato.ordina = e.target.value; aggiorna(); });
+  document.querySelectorAll(".elenco th[data-ord]").forEach(th => th.addEventListener("click", () => {
+    stato.ordina = th.dataset.ord === "esito" ? "esito" : th.dataset.ord;
+    if ([...$("#ordina").options].some(o => o.value === stato.ordina)) $("#ordina").value = stato.ordina;
+    aggiorna();
+  }));
 
-  function scrollSu() {
-    const top = galleria.getBoundingClientRect().top + scrollY - barra.offsetHeight - 8;
-    if (scrollY > top) scrollTo({ top, behavior: "smooth" });
-  }
+  // filtri su telefono: foglio dal basso
+  const apriFiltri = on => { document.body.classList.toggle("filtri-aperti", on); $("#velo").hidden = !on; document.body.classList.toggle("bloccato", on); };
+  $("#apriFiltri").addEventListener("click", () => apriFiltri(true));
+  $("#chiudiFiltri").addEventListener("click", () => apriFiltri(false));
+  $("#mostraRisultati").addEventListener("click", () => apriFiltri(false));
+  $("#velo").addEventListener("click", () => apriFiltri(false));
+
   function calcolaVista() {
-    const v = DATI.filter(x => perEsito(x) && (stato.fonte === "tutte" || x.fonte === stato.fonte));
+    const v = DATI.filter(x => passa(x));
     const pix = x => (x.w || 0) * (x.h || 0);
     const ord = {
-      punteggio: (a, b) => b.punteggio - a.punteggio || pix(b) - pix(a),
+      punteggio: (a, b) => b.punteggio - a.punteggio || (RANGO[a.esito] ?? 9) - (RANGO[b.esito] ?? 9) || pix(b) - pix(a),
       risoluzione: (a, b) => pix(b) - pix(a) || b.punteggio - a.punteggio,
+      titolo: (a, b) => (a.titolo || a.id).localeCompare(b.titolo || b.id, "it"),
       fonte: (a, b) => a.fonte.localeCompare(b.fonte, "it") || b.punteggio - a.punteggio,
-      catalogo: () => 0,
-    }[stato.ordina];
-    return v.slice().sort((a, b) => (RANGO[a.esito] ?? 9) - (RANGO[b.esito] ?? 9) || ord(a, b));
+      esito: (a, b) => (RANGO[a.esito] ?? 9) - (RANGO[b.esito] ?? 9) || b.punteggio - a.punteggio,
+      id: (a, b) => a.id.localeCompare(b.id, "it", { numeric: true }),
+    }[stato.ordina] || (() => 0);
+    return v.sort(ord);
   }
 
-  /* ---------- schede ---------- */
-  const osservatore = "IntersectionObserver" in window
-    ? new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add("vista"); osservatore.unobserve(e.target); } }),
-      { rootMargin: "0px 0px -6% 0px" })
-    : null;
-
-  function scheda(v) {
-    const ok = scaricabile(v);
-    const titolo = v.titolo || v.autore || v.id;
-    let foto;
-    if (ok) {
-      const img = el("img", {
-        alt: titolo, loading: "lazy", decoding: "async", draggable: "false",
-        srcset: `${v.img.t480} 480w, ${v.img.t960} 960w`, src: v.img.t480,
-      });
-      const fatto = () => img.classList.add("caricata");
-      img.addEventListener("load", fatto);
-      if (img.complete && img.naturalWidth) fatto();
-      foto = el("div", { class: "foto", style: `background-image:url("${v.lqip}")` }, img);
-    } else {
-      foto = el("div", { class: "foto" }, el("div", { class: "rif" },
-        el("div", {}, el("strong", {}, "Solo riferimento"), el("span", {}, `${v.fonte} · chiedi ad Ale`))));
-    }
-    const etichette = el("div", { class: "etichette" });
-    if (v.esito && v.esito !== "rosa") etichette.append(el("span", { class: `etichetta ${v.esito}` }, NOME_ESITO[v.esito] || v.esito));
-    if (v.prova) etichette.append(el("span", { class: "etichetta" }, "Prova"));
-    foto.append(etichette);
-    if (ok) foto.append(el("span", { class: "spunta", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>' }));
-    const fig = el("figure", { class: "scheda", tabindex: "0", role: "button", "aria-label": `Apri: ${titolo}` },
-      el("div", { class: "entra" },
-        foto,
-        el("figcaption", { class: "didascalia" },
-          el("span", { class: "num" }),
-          el("h3", {}, titolo),
-          el("span", { class: "voto", title: "Punteggio da 0 a 10" }, punti(v.punteggio), el("small", {}, " /10")),
-          el("p", {}, [v.fonte, v.autore].filter(Boolean).join(" · ")))));
-    fig._v = v;
-    fig._foto = foto;
-    fig.addEventListener("click", () => tocca(fig));
-    fig.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tocca(fig); } });
-    if (osservatore) osservatore.observe(fig); else fig.classList.add("vista");
-    return fig;
+  /* ---------- griglia ed elenco ---------- */
+  const spunta = () => el("span", { class: "spunta", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>' });
+  function miniatura(v, classe) {
+    if (!scaricabile(v)) return el("div", { class: classe }, el("div", { class: "rif" }, el("div", {}, el("strong", {}, "Solo riferimento"), `${v.fonte} · chiedi ad Ale`)));
+    const img = el("img", { alt: "", loading: "lazy", decoding: "async", draggable: "false", src: v.img.t480,
+      srcset: `${v.img.t480} 480w, ${v.img.t960} 960w`, sizes: classe === "thumb" ? "76px" : "(max-width: 699px) 50vw, 240px" });
+    const fatto = () => img.classList.add("caricata");
+    img.addEventListener("load", fatto); if (img.complete && img.naturalWidth) fatto();
+    return el("div", { class: classe, style: `background-image:url("${v.lqip}")` }, img);
   }
-
-  function tocca(fig) {
-    const v = fig._v;
+  function carta(v) {
+    const titolo = v.titolo || v.id;
+    const m = miniatura(v, "miniatura");
+    if (v.esito && v.esito !== "scartata") m.append(el("span", { class: `badge ${v.esito}` }, NOME_ESITO[v.esito] || v.esito));
+    if (scaricabile(v)) m.append(spunta());
+    const fig = el("figure", { class: "carta", tabindex: "0", role: "button", "aria-label": `Apri ${v.id}: ${titolo}` },
+      m, el("figcaption", {},
+        el("span", { class: "t", title: titolo }, titolo),
+        el("span", { class: "m" }, el("span", { class: `esito ${v.esito}` }, NOME_ESITO[v.esito] || ""), "·",
+          el("span", { class: "voto" }, punti(v.punteggio)), "·", el("span", {}, v.fonte))));
+    return collega(fig, v);
+  }
+  function riga(v) {
+    const titolo = v.titolo || v.id;
+    const t = miniatura(v, "thumb");
+    if (scaricabile(v)) t.append(spunta());
+    const tr = el("tr", { tabindex: "0" },
+      el("td", { class: "c-img" }, t),
+      el("td", { class: "c-id id" }, v.id),
+      el("td", { class: "c-tit" }, el("div", { class: "tit" }, titolo), v.note ? el("div", { class: "nota" }, v.note) : null),
+      el("td", { class: "c-esito" }, el("span", { class: `esito ${v.esito}` }, NOME_ESITO[v.esito] || "")),
+      el("td", { class: "c-voto voto" }, punti(v.punteggio)),
+      el("td", { class: "c-fonte" }, v.fonte),
+      el("td", { class: "c-lic lic" }, v.licenza),
+      el("td", { class: "c-px px" }, v.w ? `${v.w}×${v.h}` : ""),
+      el("td", { class: "c-gate" }, el("span", { class: "puntini", title: GATE.map(g => `${g} ${v.gate[g] === true ? "sì" : v.gate[g] === false ? "no" : "n/a"}`).join(" · ") },
+        GATE.map(g => el("i", { class: v.gate[g] === true ? "si" : v.gate[g] === false ? "no" : "" })))),
+      el("td", { class: "c-meta" }, el("span", { class: `esito ${v.esito}` }, NOME_ESITO[v.esito] || ""), ` · ${v.id} · ${v.fonte} · ${v.w ? v.w + "×" + v.h : ""}`),
+      el("td", { class: "c-nota" }, v.note ? el("div", { class: "nota" }, v.note) : null));
+    return collega(tr, v);
+  }
+  function collega(n, v) {
+    n._v = v;
+    n.addEventListener("click", () => tocca(n));
+    n.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tocca(n); } });
+    return n;
+  }
+  function tocca(n) {
+    const v = n._v;
     if (stato.selezione) {
       if (!scaricabile(v)) return avviso("Questa è solo un riferimento: il file non si può scaricare. Chiedi ad Ale.");
       stato.scelte.has(v.id) ? stato.scelte.delete(v.id) : stato.scelte.add(v.id);
-      fig.classList.toggle("scelta", stato.scelte.has(v.id));
+      document.querySelectorAll(`[data-id="${CSS.escape(v.id)}"]`).forEach(x => x.classList.toggle("scelta", stato.scelte.has(v.id)));
       aggiornaSel();
     } else apri(stato.vista.indexOf(v));
   }
 
   function disegna() {
     stato.vista = calcolaVista();
-    const visibili = new Set(stato.vista.map(v => v.id));
-    for (const [id, n] of schede) if (!visibili.has(id)) n.remove();
-    stato.vista.forEach((v, i) => {
-      let n = schede.get(v.id);
-      if (!n) { n = scheda(v); schede.set(v.id, n); }
-      n.querySelector(".num").textContent = due(i + 1);
+    const elenco = stato.modo === "elenco";
+    $("#griglia").hidden = elenco; $("#elenco").hidden = !elenco;
+    $("#vistaGriglia").setAttribute("aria-pressed", String(!elenco));
+    $("#vistaElenco").setAttribute("aria-pressed", String(elenco));
+    document.querySelectorAll(".elenco th[data-ord]").forEach(th => th.classList.toggle("attivo", th.dataset.ord === stato.ordina));
+    const chiave = elenco ? "r:" : "c:";
+    const nodi = stato.vista.map((v, i) => {
+      let n = schede.get(chiave + v.id);
+      if (!n) { n = elenco ? riga(v) : carta(v); n.dataset.id = v.id; schede.set(chiave + v.id, n); }
       n.classList.toggle("scelta", stato.scelte.has(v.id));
-      galleria.append(n);
+      if (!elenco) n.style.animationDelay = `${Math.min(i, 16) * 18}ms`;
+      return n;
     });
-    $("#vuoto").hidden = stato.vista.length > 0;
-    impagina();
+    (elenco ? righe : griglia).replaceChildren(...nodi);
+    const n = stato.vista.length;
+    $("#conta").innerHTML = `<b>${n}</b> ${n === 1 ? "immagine" : "immagini"}${n !== DATI.length ? ` su ${DATI.length}` : ""}`;
+    $("#mostraRisultati").textContent = `Mostra ${n} ${n === 1 ? "immagine" : "immagini"}`;
+    $("#vuoto").hidden = n > 0;
   }
+  function aggiorna() { faccette(); attivi(); disegna(); }
+  const cambiaModo = m => { stato.modo = m; ls.set("archivio-vista", m); disegna(); };
+  $("#vistaGriglia").addEventListener("click", () => cambiaModo("griglia"));
+  $("#vistaElenco").addEventListener("click", () => cambiaModo("elenco"));
 
-  /* masonry che rispetta l'ordine: ogni scheda va nella colonna piu' corta */
-  let ultimaLarghezza = 0;
-  function impagina() {
-    const st = getComputedStyle(galleria);
-    const W = galleria.clientWidth - parseFloat(st.paddingLeft) - parseFloat(st.paddingRight);
-    const vw = window.innerWidth;
-    const col = vw < 1100 ? 2 : 3;
-    const gap = vw < 700 ? 14 : vw < 1100 ? 32 : 48;
-    const cw = (W - gap * (col - 1)) / col;
-    const alt = new Array(col).fill(0);
-    const sx = parseFloat(st.paddingLeft);
-    const figli = [...galleria.children];
-    // prima si scrivono tutte le misure, poi si leggono tutte le altezze: un solo ricalcolo, non uno per scheda
-    for (const n of figli) {
-      const v = n._v;
-      n.style.width = cw + "px";
-      n._foto.style.height = cw * (v.w && v.h ? v.h / v.w : 0.75) + "px";
-      const img = n._foto.querySelector("img");
-      if (img) img.sizes = Math.ceil(cw) + "px";
-    }
-    const altezze = figli.map(n => n.offsetHeight);
-    for (let k = 0; k < figli.length; k++) {
-      const n = figli[k], h = altezze[k];
-      let c = 0;
-      for (let i = 1; i < col; i++) if (alt[i] < alt[c] - 1) c = i;
-      n.style.transform = `translate(${sx + c * (cw + gap)}px, ${alt[c]}px)`;
-      // sfalsamento editoriale: sui computer la colonna centrale parte piu' in basso
-      if (k < col && col === 3 && c === 1) { alt[c] += 90; n.style.transform = `translate(${sx + c * (cw + gap)}px, ${alt[c]}px)`; }
-      alt[c] += h + gap * (vw < 700 ? 1.8 : 1.4);
-    }
-    galleria.style.height = Math.max(0, ...alt) + "px";
-    ultimaLarghezza = vw;
-    requestAnimationFrame(() => galleria.classList.add("pronta"));
-  }
-  let timerResize;
-  addEventListener("resize", () => {
-    clearTimeout(timerResize);
-    timerResize = setTimeout(() => { if (innerWidth !== ultimaLarghezza) impagina(); if (lb.aperta) lb.mostra(lb.i, false); }, 120);
-  });
-  document.fonts && document.fonts.ready.then(impagina);
-
-  const barra = $("#barra"), nav = $("#nav");
-  addEventListener("scroll", () => nav.classList.toggle("via", scrollY > innerHeight * 0.6), { passive: true });
-
+  // altezza reale della testata (per filtri e intestazioni dell'elenco appiccicati sotto)
+  const misuraTesta = () => document.documentElement.style.setProperty("--testa-h", $(".testa").offsetHeight - (parseFloat(getComputedStyle($(".testa")).paddingTop) || 0) + "px");
+  addEventListener("resize", () => { misuraTesta(); if (lb.aperta) lb.mostra(lb.i, false); });
+  misuraTesta();
+  document.fonts && document.fonts.ready.then(misuraTesta);
 
   /* ---------- selezione e zip ---------- */
   function aggiornaSel() {
@@ -465,10 +481,13 @@
 
     const campi = el("dl", { class: "campi" });
     const riga = (k, val) => val && campi.append(el("dt", {}, k), el("dd", {}, val));
+    riga("ID", v.id);
+    riga("Raccolta", v.raccolta);
     riga("Fonte", v.fonte);
     riga("Autore", v.autore);
     riga("Licenza", v.licenza);
     riga("Pixel", v.risoluzione ? v.risoluzione.replace("x", " × ") : "");
+    riga("Peso", ok && v.peso ? mb(v.peso) : "");
     riga("Esito", NOME_ESITO[v.esito] || "");
     riga("Punteggio", `${punti(v.punteggio)} / 10`);
     if (!ok) riga("Uso", "Solo riferimento: chiedi ad Ale");
@@ -521,8 +540,7 @@
       if (lb.daStoria && history.state && history.state.lb) history.back();
       else history.replaceState(null, "", location.pathname + location.search);
     }
-    nav.classList.add("via");
-    const n = id && schede.get(id);
+    const n = id && schede.get((stato.modo === "elenco" ? "r:" : "c:") + id);
     if (n) { n.focus({ preventScroll: true }); const r = n.getBoundingClientRect(); if (r.top < 60 || r.bottom > innerHeight) n.scrollIntoView({ block: "center" }); }
   }
   addEventListener("popstate", () => { if (lb.aperta) chiudi(true); else apriDaHash(); });
@@ -532,8 +550,9 @@
     if (!id) return;
     let i = stato.vista.findIndex(v => v.id === id);
     if (i < 0 && DATI.some(v => v.id === id)) {  // link a una foto fuori dai filtri attuali: si allargano
-      stato.esito = "tutte"; stato.fonte = "tutte";
-      filtri(); disegna();
+      for (const f of FACCETTE) stato.sel[f.k].clear();
+      stato.gate.clear(); stato.q = ""; $("#cerca").value = "";
+      aggiorna();
       i = stato.vista.findIndex(v => v.id === id);
     }
     if (i >= 0) apri(i, true);
@@ -691,12 +710,8 @@
   // iOS: niente zoom della pagina col pizzico dentro la lightbox
   ["gesturestart", "gesturechange"].forEach(t => document.addEventListener(t, e => { if (lb.aperta) e.preventDefault(); }, { passive: false }));
 
-  /* ---------- crediti nel piede ---------- */
-  $("#crediti").replaceChildren(...DATI.filter(scaricabile).map(v => el("p", {},
-    el("b", {}, v.titolo || v.nome_file), " — ", v.attribuzione || [v.autore, v.fonte].filter(Boolean).join(", "), ". ", v.licenza, ".")));
 
-  filtri();
-  disegna();
+  aggiorna();
   aggiornaSel();
   apriDaHash();
 })();
