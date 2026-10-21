@@ -158,9 +158,20 @@
   /* ---------- griglia ed elenco ---------- */
   const spunta = () => el("span", { class: "spunta", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>' });
   function miniatura(v, classe) {
-    if (!scaricabile(v)) return el("div", { class: classe }, el("div", { class: "rif" },
-      el("span", { class: "rif-fonte" }, doveGuardare(v)),
-      classe === "thumb" ? null : el("span", { class: "rif-nota" }, v.note || "")));
+    if (!scaricabile(v)) {
+      const tessera = () => el("div", { class: "rif" },
+        el("span", { class: "rif-fonte" }, doveGuardare(v)),
+        classe === "thumb" ? null : el("span", { class: "rif-nota" }, v.note || ""));
+      if (!v.anteprima) return el("div", { class: classe }, tessera());
+      // anteprima della fonte, collegata e non copiata; se non carica si torna alla scheda senza immagine
+      const box = el("div", { class: `${classe} con-anteprima` });
+      const img = el("img", { alt: "", loading: "lazy", decoding: "async", draggable: "false", referrerpolicy: "no-referrer", src: v.anteprima });
+      img.addEventListener("load", () => img.classList.add("caricata"));
+      img.addEventListener("error", () => box.replaceChildren(tessera(), ...[...box.children].filter(c => c !== img && !c.classList.contains("etichetta-ap"))));
+      box.append(img);
+      if (classe !== "thumb") box.append(el("span", { class: "etichetta-ap" }, "Anteprima Envato"));
+      return box;
+    }
     const img = el("img", { alt: "", loading: "lazy", decoding: "async", draggable: "false", src: v.img.t480,
       srcset: `${v.img.t480} 480w, ${v.img.t960} 960w`, sizes: classe === "thumb" ? "76px" : "(max-width: 699px) 50vw, 240px" });
     const fatto = () => img.classList.add("caricata");
@@ -428,6 +439,10 @@
       s.append(el("div", { class: "lb-cornice", style: "width:min(520px,86vw);aspect-ratio:4/3" },
         el("div", { class: "rif rif-grande" },
           el("div", {},
+            v.anteprima ? el("figure", { class: "rif-anteprima" },
+              el("img", { src: v.anteprima, alt: "", referrerpolicy: "no-referrer", decoding: "async", draggable: "false",
+                onerror: e => e.target.closest("figure").remove() }),
+              el("figcaption", {}, "Anteprima Envato")) : null,
             el("span", { class: "rif-fonte" }, `${doveGuardare(v)} · ${v.id}`),
             el("strong", {}, v.titolo || v.id),
             v.note ? el("p", {}, v.note) : null,
@@ -475,7 +490,8 @@
       strisciaEl._chiave = V.map(v => v.id).join();
       strisciaEl.replaceChildren(...V.map((v, i) => el("button", {
         type: "button", "aria-label": `Fotografia ${i + 1}`, onclick: () => lb.mostra(i),
-      }, scaricabile(v) ? el("img", { src: v.img.t480, alt: "", loading: "lazy", decoding: "async" }) : null)));
+      }, scaricabile(v) ? el("img", { src: v.img.t480, alt: "", loading: "lazy", decoding: "async" })
+        : v.anteprima ? el("img", { src: v.anteprima, alt: "", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer" }) : null)));
     }
     [...strisciaEl.children].forEach((b, i) => b.classList.toggle("attuale", i === lb.i));
     const b = strisciaEl.children[lb.i];
