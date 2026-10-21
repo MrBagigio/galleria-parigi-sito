@@ -334,6 +334,9 @@ body.bloccato { overflow: hidden; }
 .rif { display: grid; place-items: center; text-align: center; height: 100%; padding: 12px; font-size: 12px; color: var(--ink-2);
   background: repeating-linear-gradient(135deg, var(--bg-2) 0 10px, var(--carta) 10px 20px); }
 .rif strong { display: block; font: 500 16px var(--serif); color: var(--ink); }
+.rif-grande { padding: 28px; }
+.rif-grande strong { font-size: 24px; margin-bottom: 8px; }
+.rif-grande p { margin: 0 0 18px; color: var(--muto); }
 .bottone.piccolo { min-height: 36px; padding: 4px 14px; font-size: 11px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 .elenco td.c-tit { min-width: 240px; width: 42%; }
@@ -344,6 +347,9 @@ body.bloccato { overflow: hidden; }
   .marchio strong { font-size: 19px; }
   .vista button { height: 30px; padding: 0 9px; }
   .testa-azioni { gap: 6px; }
-  .testa-azioni .bottone.piccolo { min-height: 34px; padding: 2px 11px; font-size: 10px; letter-spacing: .14em; }
+  .testa-azioni .rif-grande { padding: 28px; }
+.rif-grande strong { font-size: 24px; margin-bottom: 8px; }
+.rif-grande p { margin: 0 0 18px; color: var(--muto); }
+.bottone.piccolo { min-height: 34px; padding: 2px 11px; font-size: 10px; letter-spacing: .14em; }
 }
 @media (max-width: 400px) { .marchio span { display: none; } }

@@ -21,6 +21,8 @@
     E5: "Boiserie", E6: "Soffitto liscio", E7: "Niente testi o persone", E8: "Pareti laterali",
   };
   const scaricabile = v => v.pubblicazione === "scaricabile";
+  // le foto "solo riferimento" (Envato) si guardano sul sito della fonte: qui niente file
+  const doveGuardare = v => (/envato/i.test(v.fonte || "") ? "Envato" : v.fonte || "la fonte");
   const mb = n => (n / 1048576).toFixed(n > 10485760 ? 0 : 1).replace(".", ",") + " MB";
   const punti = n => (Math.round(n * 10) / 10).toString().replace(".", ",");
   const due = n => String(n).padStart(2, "0");
@@ -150,7 +152,8 @@
   /* ---------- griglia ed elenco ---------- */
   const spunta = () => el("span", { class: "spunta", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>' });
   function miniatura(v, classe) {
-    if (!scaricabile(v)) return el("div", { class: classe }, el("div", { class: "rif" }, el("div", {}, el("strong", {}, "Solo riferimento"), `${v.fonte} · chiedi ad Ale`)));
+    if (!scaricabile(v)) return el("div", { class: classe }, el("div", { class: "rif" },
+      el("div", {}, el("strong", {}, `Su ${doveGuardare(v)}`), classe === "thumb" ? null : "Si guarda lì")));
     const img = el("img", { alt: "", loading: "lazy", decoding: "async", draggable: "false", src: v.img.t480,
       srcset: `${v.img.t480} 480w, ${v.img.t960} 960w`, sizes: classe === "thumb" ? "76px" : "(max-width: 699px) 50vw, 240px" });
     const fatto = () => img.classList.add("caricata");
@@ -197,7 +200,7 @@
   function tocca(n) {
     const v = n._v;
     if (stato.selezione) {
-      if (!scaricabile(v)) return avviso("Questa è solo un riferimento: il file chiedilo ad Ale.");
+      if (!scaricabile(v)) return avviso(`Questa si guarda su ${doveGuardare(v)}: da qui non si scarica.`);
       stato.scelte.has(v.id) ? stato.scelte.delete(v.id) : stato.scelte.add(v.id);
       document.querySelectorAll(`[data-id="${CSS.escape(v.id)}"]`).forEach(x => x.classList.toggle("scelta", stato.scelte.has(v.id)));
       aggiornaSel();
@@ -404,9 +407,10 @@
       s._img = alta; s._cornice = cornice;
     } else {
       s.append(el("div", { class: "lb-cornice", style: "width:min(520px,86vw);aspect-ratio:4/3" },
-        el("div", { class: "rif", style: "background:#1f1a15;border-color:#352c24;color:#cbbfae" },
-          el("div", {}, el("strong", { style: "color:#efe7db" }, "Solo riferimento"),
-            el("span", {}, `La licenza (${v.fonte}) non permette di passarti il file: chiedi ad Ale.`)))));
+        el("div", { class: "rif rif-grande" },
+          el("div", {}, el("strong", {}, v.titolo || v.id),
+            el("p", {}, `Questa la guardi su ${doveGuardare(v)}.`),
+            v.pagina ? el("a", { class: "bottone pieno", href: v.pagina, target: "_blank", rel: "noopener noreferrer" }, `Guarda su ${doveGuardare(v)}`) : null))));
     }
     return s;
   }
@@ -479,7 +483,8 @@
       }
       if (lbEl.classList.contains("info")) prendiBlob(v).catch(() => {});
     }
-    if (v.pagina) azioni.append(el("a", { class: "bottone", href: v.pagina, target: "_blank", rel: "noopener noreferrer" }, "Pagina della fonte"));
+    if (v.pagina) azioni.append(el("a", { class: ok ? "bottone" : "bottone pieno", href: v.pagina, target: "_blank", rel: "noopener noreferrer" },
+      ok ? "Pagina della fonte" : `Guarda su ${doveGuardare(v)}`));
 
     const campi = el("dl", { class: "campi" });
     const riga = (k, val) => val && campi.append(el("dt", {}, k), el("dd", {}, val));
@@ -492,7 +497,7 @@
     riga("Peso", ok && v.peso ? mb(v.peso) : "");
     riga("Esito", NOME_ESITO[v.esito] || "");
     riga("Punteggio", `${punti(v.punteggio)} / 10`);
-    if (!ok) riga("Uso", "Solo riferimento: chiedi ad Ale");
+    if (!ok) riga("Uso", `Si guarda su ${doveGuardare(v)}, non si scarica da qui`);
 
     const gate = el("div", { class: "gate" }, GATE.map(g => el("span", {
       class: v.gate[g] === true ? "si" : v.gate[g] === false ? "no" : "",
