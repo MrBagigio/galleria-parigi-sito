@@ -53,14 +53,11 @@
   const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   for (const v of DATI) v._testo = norm([v.id, v.titolo, v.note, v.autore, v.fonte, v.licenza, v.raccolta, NOME_ESITO[v.esito], v.attribuzione].join(" "));
 
-  // si apre sull'esito migliore presente (rosa, altrimenti quasi...); le altre si aggiungono dai filtri
-  const migliore = ESITI.find(e => e !== "scartata" && DATI.some(v => v.esito === e));
   const stato = {
     sel: Object.fromEntries(FACCETTE.map(f => [f.k, new Set()])), gate: new Set(), q: "",
     ordina: "punteggio", vista: [], modo: ls.get("archivio-vista") === "elenco" ? "elenco" : "griglia",
     selezione: false, scelte: new Set(),
   };
-  if (migliore) stato.sel.esito.add(migliore);
   const griglia = $("#griglia"), righe = $("#righe");
   const schede = new Map();
 
@@ -231,6 +228,11 @@
   function aggiorna() { faccette(); attivi(); disegna(); }
   const cambiaModo = m => { stato.modo = m; ls.set("archivio-vista", m); disegna(); };
   $("#vistaGriglia").addEventListener("click", () => cambiaModo("griglia"));
+  // "Dimentica questo dispositivo": toglie la chiave ricordata, la prossima volta si chiede la password
+  $("#dimentica").addEventListener("click", () => {
+    try { Object.keys(localStorage).filter(k => k.startsWith("galleria-chiave-")).forEach(k => localStorage.removeItem(k)); } catch {}
+    avviso("Fatto: la prossima volta ti chiedo la password.");
+  });
   // "Sfoglia la raccolta": apre a tutto schermo la prima foto dei risultati, poi si scorre
   $("#sfoglia").addEventListener("click", () => { if (stato.vista.length) apri(0); });
   $("#vistaElenco").addEventListener("click", () => cambiaModo("elenco"));
