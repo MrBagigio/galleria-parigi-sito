@@ -94,6 +94,9 @@ a { color: var(--noce); }
 .faccetta label.zero { opacity: .45; }
 .faccetta .pallino { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 
+.benvenuto { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px 24px; padding: 28px 0 18px; border-bottom: 1px solid var(--linea); animation: sale-su .8s var(--ease) both; }
+.benvenuto h1 { margin: 0; font: 400 clamp(34px, 5vw, 52px)/1.05 var(--serif); letter-spacing: -.01em; }
+@media (max-width: 699px) { .benvenuto { padding: 22px 0 16px; } .benvenuto .bottone { width: 100%; min-height: 48px; } }
 .risultati { min-width: 0; padding: 0 var(--gr) 0 var(--gl); }
 @media (min-width: 1000px) { .risultati { padding-left: 24px; } }
 .riepilogo { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 14px 0 12px; }

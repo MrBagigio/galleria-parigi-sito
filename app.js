@@ -197,7 +197,7 @@
   function tocca(n) {
     const v = n._v;
     if (stato.selezione) {
-      if (!scaricabile(v)) return avviso("Questa è solo un riferimento: il file non si può scaricare. Chiedi ad Ale.");
+      if (!scaricabile(v)) return avviso("Questa è solo un riferimento: il file chiedilo ad Ale.");
       stato.scelte.has(v.id) ? stato.scelte.delete(v.id) : stato.scelte.add(v.id);
       document.querySelectorAll(`[data-id="${CSS.escape(v.id)}"]`).forEach(x => x.classList.toggle("scelta", stato.scelte.has(v.id)));
       aggiornaSel();
@@ -228,6 +228,8 @@
   function aggiorna() { faccette(); attivi(); disegna(); }
   const cambiaModo = m => { stato.modo = m; ls.set("archivio-vista", m); disegna(); };
   $("#vistaGriglia").addEventListener("click", () => cambiaModo("griglia"));
+  // "Sfoglia la raccolta": apre a tutto schermo la prima foto dei risultati, poi si scorre
+  $("#sfoglia").addEventListener("click", () => { if (stato.vista.length) apri(0); });
   $("#vistaElenco").addEventListener("click", () => cambiaModo("elenco"));
 
   // altezza reale della testata (per filtri e intestazioni dell'elenco appiccicati sotto)
