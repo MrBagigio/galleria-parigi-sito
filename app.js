@@ -23,6 +23,15 @@
   const scaricabile = v => v.pubblicazione === "scaricabile";
   // le foto "solo riferimento" (Envato) si guardano sul sito della fonte: qui niente file
   const doveGuardare = v => (/envato/i.test(v.fonte || "") ? "Envato" : v.fonte || "la fonte");
+  async function chiediAle(voci) {
+    const testo = (voci.length === 1 ? "Ale, mi serve questa foto:" : `Ale, mi servono queste ${voci.length} foto:`) + "\n" +
+      voci.map(v => `- ${v.id} · ${v.titolo || ""}${v.pagina ? "\n  " + v.pagina : ""}`).join("\n");
+    if (navigator.share) {
+      try { await navigator.share({ text: testo }); return; } catch (e) { if (e.name === "AbortError") return; }
+    }
+    try { await navigator.clipboard.writeText(testo); avviso("Messaggio copiato: incollalo ad Ale"); }
+    catch { avviso(`Scrivi ad Ale: ${voci.map(v => v.id).join(", ")}`); }
+  }
   const mb = n => (n / 1048576).toFixed(n > 10485760 ? 0 : 1).replace(".", ",") + " MB";
   const punti = n => (Math.round(n * 10) / 10).toString().replace(".", ",");
   const due = n => String(n).padStart(2, "0");
@@ -150,7 +159,8 @@
   const spunta = () => el("span", { class: "spunta", "aria-hidden": "true", html: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>' });
   function miniatura(v, classe) {
     if (!scaricabile(v)) return el("div", { class: classe }, el("div", { class: "rif" },
-      el("div", {}, el("strong", {}, `Su ${doveGuardare(v)}`), classe === "thumb" ? null : "Si guarda lì")));
+      el("span", { class: "rif-fonte" }, doveGuardare(v)),
+      classe === "thumb" ? null : el("span", { class: "rif-nota" }, v.note || "")));
     const img = el("img", { alt: "", loading: "lazy", decoding: "async", draggable: "false", src: v.img.t480,
       srcset: `${v.img.t480} 480w, ${v.img.t960} 960w`, sizes: classe === "thumb" ? "76px" : "(max-width: 699px) 50vw, 240px" });
     const fatto = () => img.classList.add("caricata");
@@ -161,7 +171,7 @@
     const titolo = v.titolo || v.id;
     const m = miniatura(v, "miniatura");
     if (v.esito && v.esito !== "scartata") m.append(el("span", { class: `badge ${v.esito}` }, NOME_ESITO[v.esito] || v.esito));
-    if (scaricabile(v)) m.append(spunta());
+    m.append(spunta());
     const fig = el("figure", { class: "carta", tabindex: "0", role: "button", "aria-label": `Apri ${v.id}: ${titolo}` },
       m, el("figcaption", {},
         el("span", { class: "t", title: titolo }, titolo),
@@ -172,7 +182,7 @@
   function riga(v) {
     const titolo = v.titolo || v.id;
     const t = miniatura(v, "thumb");
-    if (scaricabile(v)) t.append(spunta());
+    t.append(spunta());
     const tr = el("tr", { tabindex: "0" },
       el("td", { class: "c-img" }, t),
       el("td", { class: "c-id id" }, v.id),
@@ -197,7 +207,6 @@
   function tocca(n) {
     const v = n._v;
     if (stato.selezione) {
-      if (!scaricabile(v)) return avviso(`Questa si guarda su ${doveGuardare(v)}: da qui non si scarica.`);
       stato.scelte.has(v.id) ? stato.scelte.delete(v.id) : stato.scelte.add(v.id);
       document.querySelectorAll(`[data-id="${CSS.escape(v.id)}"]`).forEach(x => x.classList.toggle("scelta", stato.scelte.has(v.id)));
       aggiornaSel();
@@ -250,17 +259,23 @@
     $("#barraSel").hidden = !stato.selezione;
     const n = stato.scelte.size;
     $("#contaSel").textContent = n === 1 ? "1 selezionata" : `${n} selezionate`;
-    $("#scaricaSel").disabled = n === 0;
+    const scelte = DATI.filter(v => stato.scelte.has(v.id));
+    const nFile = scelte.filter(scaricabile).length, nRif = scelte.length - nFile;
+    $("#scaricaSel").disabled = nFile === 0;
+    $("#scaricaSel").textContent = nRif && nFile ? `Scarica ZIP (${nFile})` : "Scarica ZIP";
+    $("#chiediSel").hidden = nRif === 0;
+    $("#chiediSel").textContent = `Chiedi ad Ale (${nRif})`;
   }
   $("#modoSel").addEventListener("click", () => { stato.selezione = !stato.selezione; if (!stato.selezione) { stato.scelte.clear(); disegna(); } aggiornaSel(); });
   $("#chiudiSel").addEventListener("click", () => { stato.selezione = false; stato.scelte.clear(); disegna(); aggiornaSel(); });
   $("#selTutte").addEventListener("click", () => {
-    const tutte = stato.vista.filter(scaricabile);
+    const tutte = stato.vista;
     const giaTutte = tutte.every(v => stato.scelte.has(v.id));
     for (const v of tutte) giaTutte ? stato.scelte.delete(v.id) : stato.scelte.add(v.id);
     disegna(); aggiornaSel();
   });
   $("#scaricaSel").addEventListener("click", () => zip(DATI.filter(v => stato.scelte.has(v.id))));
+  $("#chiediSel").addEventListener("click", () => chiediAle(DATI.filter(v => stato.scelte.has(v.id) && !scaricabile(v))));
 
   const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
   const crc32 = b => { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
@@ -412,9 +427,14 @@
     } else {
       s.append(el("div", { class: "lb-cornice", style: "width:min(520px,86vw);aspect-ratio:4/3" },
         el("div", { class: "rif rif-grande" },
-          el("div", {}, el("strong", {}, v.titolo || v.id),
-            el("p", {}, `Questa la guardi su ${doveGuardare(v)}.`),
-            v.pagina ? el("a", { class: "bottone pieno", href: v.pagina, target: "_blank", rel: "noopener noreferrer" }, `Guarda su ${doveGuardare(v)}`) : null))));
+          el("div", {},
+            el("span", { class: "rif-fonte" }, `${doveGuardare(v)} · ${v.id}`),
+            el("strong", {}, v.titolo || v.id),
+            v.note ? el("p", {}, v.note) : null,
+            el("div", { class: "rif-azioni" },
+              el("button", { class: "bottone pieno", type: "button", onclick: () => chiediAle([v]) }, "Chiedi ad Ale"),
+              v.pagina ? el("a", { class: "bottone", href: v.pagina, target: "_blank", rel: "noopener noreferrer" }, `Guarda su ${doveGuardare(v)}`) : null),
+            v.pagina ? el("small", {}, `Per guardarla su ${doveGuardare(v)} serve un account.`) : null))));
     }
     return s;
   }
@@ -487,7 +507,8 @@
       }
       if (lbEl.classList.contains("info")) prendiBlob(v).catch(() => {});
     }
-    if (v.pagina) azioni.append(el("a", { class: ok ? "bottone" : "bottone pieno", href: v.pagina, target: "_blank", rel: "noopener noreferrer" },
+    if (!ok) azioni.append(el("button", { class: "bottone pieno", type: "button", onclick: () => chiediAle([v]) }, "Chiedi ad Ale"));
+    if (v.pagina) azioni.append(el("a", { class: "bottone", href: v.pagina, target: "_blank", rel: "noopener noreferrer" },
       ok ? "Pagina della fonte" : `Guarda su ${doveGuardare(v)}`));
 
     const campi = el("dl", { class: "campi" });
@@ -501,7 +522,7 @@
     riga("Peso", ok && v.peso ? mb(v.peso) : "");
     riga("Esito", NOME_ESITO[v.esito] || "");
     riga("Punteggio", `${punti(v.punteggio)} / 10`);
-    if (!ok) riga("Uso", `Si guarda su ${doveGuardare(v)}, non si scarica da qui`);
+    if (!ok) riga("Uso", `Il file ce l'ha Ale (licenza ${doveGuardare(v)}): chiediglielo`);
 
     const gate = el("div", { class: "gate" }, GATE.map(g => el("span", {
       class: v.gate[g] === true ? "si" : v.gate[g] === false ? "no" : "",
